@@ -1,15 +1,12 @@
-from __future__ import unicode_literals
-
 import os
 import re
 import subprocess
 import time
 
 from .common import FileDownloader
-from ..compat import compat_str
 from ..utils import (
+    Popen,
     check_executable,
-    encodeFilename,
     encodeArgument,
     get_exe_version,
 )
@@ -26,7 +23,7 @@ class RtmpFD(FileDownloader):
             start = time.time()
             resume_percent = None
             resume_downloaded_data_len = None
-            proc = subprocess.Popen(args, stderr=subprocess.PIPE)
+            proc = Popen(args, stderr=subprocess.PIPE)
             cursor_in_new_line = True
             proc_stderr_closed = False
             try:
@@ -93,8 +90,7 @@ class RtmpFD(FileDownloader):
                     self.to_screen('')
                 return proc.wait()
             except BaseException:  # Including KeyboardInterrupt
-                proc.kill()
-                proc.wait()
+                proc.kill(timeout=None)
                 raise
 
         url = info_dict['url']
@@ -145,7 +141,7 @@ class RtmpFD(FileDownloader):
         if isinstance(conn, list):
             for entry in conn:
                 basic_args += ['--conn', entry]
-        elif isinstance(conn, compat_str):
+        elif isinstance(conn, str):
             basic_args += ['--conn', conn]
         if protocol is not None:
             basic_args += ['--protocol', protocol]
@@ -182,15 +178,15 @@ class RtmpFD(FileDownloader):
             return False
 
         while retval in (RD_INCOMPLETE, RD_FAILED) and not test and not live:
-            prevsize = os.path.getsize(encodeFilename(tmpfilename))
-            self.to_screen('[rtmpdump] Downloaded %s bytes' % prevsize)
+            prevsize = os.path.getsize(tmpfilename)
+            self.to_screen(f'[rtmpdump] Downloaded {prevsize} bytes')
             time.sleep(5.0)  # This seems to be needed
-            args = basic_args + ['--resume']
+            args = [*basic_args, '--resume']
             if retval == RD_FAILED:
                 args += ['--skip', '1']
             args = [encodeArgument(a) for a in args]
             retval = run_rtmpdump(args)
-            cursize = os.path.getsize(encodeFilename(tmpfilename))
+            cursize = os.path.getsize(tmpfilename)
             if prevsize == cursize and retval == RD_FAILED:
                 break
             # Some rtmp streams seem abort after ~ 99.8%. Don't complain for those
@@ -199,8 +195,8 @@ class RtmpFD(FileDownloader):
                 retval = RD_SUCCESS
                 break
         if retval == RD_SUCCESS or (test and retval == RD_INCOMPLETE):
-            fsize = os.path.getsize(encodeFilename(tmpfilename))
-            self.to_screen('[rtmpdump] Downloaded %s bytes' % fsize)
+            fsize = os.path.getsize(tmpfilename)
+            self.to_screen(f'[rtmpdump] Downloaded {fsize} bytes')
             self.try_rename(tmpfilename, filename)
             self._hook_progress({
                 'downloaded_bytes': fsize,

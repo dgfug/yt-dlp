@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import json
 
 from .common import InfoExtractor
@@ -51,7 +48,7 @@ class GooglePodcastsIE(GooglePodcastsBaseIE):
             'timestamp': 1609606800,
             'duration': 2901,
             'series': "Wait Wait... Don't Tell Me!",
-        }
+        },
     }
 
     def _real_extract(self, url):

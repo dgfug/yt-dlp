@@ -1,9 +1,7 @@
-from __future__ import unicode_literals
-
 import re
+import urllib.parse
 
 from .common import InfoExtractor
-from ..compat import compat_urllib_parse_urlencode
 from ..utils import (
     ExtractorError,
     merge_dicts,
@@ -39,12 +37,8 @@ class EroProfileIE(InfoExtractor):
         'skip': 'Requires login',
     }]
 
-    def _login(self):
-        (username, password) = self._get_login_info()
-        if username is None:
-            return
-
-        query = compat_urllib_parse_urlencode({
+    def _perform_login(self, username, password):
+        query = urllib.parse.urlencode({
             'username': username,
             'password': password,
             'url': 'http://www.eroprofile.com/',
@@ -61,9 +55,6 @@ class EroProfileIE(InfoExtractor):
         redirect_url = self._search_regex(
             r'<script[^>]+?src="([^"]+)"', login_page, 'login redirect url')
         self._download_webpage(redirect_url, None, False)
-
-    def _real_initialize(self):
-        self._login()
 
     def _real_extract(self, url):
         display_id = self._match_id(url)
@@ -100,7 +91,7 @@ class EroProfileAlbumIE(InfoExtractor):
         'url': 'https://www.eroprofile.com/m/videos/album/BBW-2-893',
         'info_dict': {
             'id': 'BBW-2-893',
-            'title': 'BBW 2'
+            'title': 'BBW 2',
         },
         'playlist_mincount': 486,
     },

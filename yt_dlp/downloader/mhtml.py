@@ -1,25 +1,16 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import io
 import quopri
 import re
 import uuid
 
 from .fragment import FragmentFD
-from ..utils import (
-    escapeHTML,
-    formatSeconds,
-    srt_subtitles_timecode,
-    urljoin,
-)
+from ..compat import imghdr
+from ..utils import escapeHTML, formatSeconds, srt_subtitles_timecode, urljoin
 from ..version import __version__ as YT_DLP_VERSION
 
 
 class MhtmlFD(FragmentFD):
-    FD_NAME = 'mhtml'
-
-    _STYLESHEET = """\
+    _STYLESHEET = '''\
 html, body {
     margin: 0;
     padding: 0;
@@ -54,7 +45,7 @@ body > figure > img {
     max-width: 100%;
     max-height: calc(100vh - 5em);
 }
-"""
+'''
     _STYLESHEET = re.sub(r'\s+', ' ', _STYLESHEET)
     _STYLESHEET = re.sub(r'\B \B|(?<=[\w\-]) (?=[^\w\-])|(?<=[^\w\-]) (?=[\w\-])', '', _STYLESHEET)
 
@@ -62,28 +53,23 @@ body > figure > img {
     def _escape_mime(s):
         return '=?utf-8?Q?' + (b''.join(
             bytes((b,)) if b >= 0x20 else b'=%02X' % b
-            for b in quopri.encodestring(s.encode('utf-8'), header=True)
+            for b in quopri.encodestring(s.encode(), header=True)
         )).decode('us-ascii') + '?='
 
     def _gen_cid(self, i, fragment, frag_boundary):
-        return '%u.%s@yt-dlp.github.io.invalid' % (i, frag_boundary)
+        return f'{i}.{frag_boundary}@yt-dlp.github.io.invalid'
 
     def _gen_stub(self, *, fragments, frag_boundary, title):
         output = io.StringIO()
 
-        output.write((
+        output.write(
             '<!DOCTYPE html>'
             '<html>'
             '<head>'
-            ''  '<meta name="generator" content="yt-dlp {version}">'
-            ''  '<title>{title}</title>'
-            ''  '<style>{styles}</style>'
-            '<body>'
-        ).format(
-            version=escapeHTML(YT_DLP_VERSION),
-            styles=self._STYLESHEET,
-            title=escapeHTML(title)
-        ))
+            f'<meta name="generator" content="yt-dlp {escapeHTML(YT_DLP_VERSION)}">'
+            f'<title>{escapeHTML(title)}</title>'
+            f'<style>{self._STYLESHEET}</style>'
+            '<body>')
 
         t0 = 0
         for i, frag in enumerate(fragments):
@@ -96,15 +82,12 @@ body > figure > img {
                     num=i + 1,
                     t0=srt_subtitles_timecode(t0),
                     t1=srt_subtitles_timecode(t1),
-                    duration=formatSeconds(frag['duration'], msec=True)
+                    duration=formatSeconds(frag['duration'], msec=True),
                 ))
             except (KeyError, ValueError, TypeError):
                 t1 = None
-                output.write((
-                    '<figcaption>Slide #{num}</figcaption>'
-                ).format(num=i + 1))
-            output.write('<img src="cid:{cid}">'.format(
-                cid=self._gen_cid(i, frag, frag_boundary)))
+                output.write(f'<figcaption>Slide #{i + 1}</figcaption>')
+            output.write(f'<img src="cid:{self._gen_cid(i, frag, frag_boundary)}">')
             output.write('</figure>')
             t0 = t1
 
@@ -114,8 +97,8 @@ body > figure > img {
         fragment_base_url = info_dict.get('fragment_base_url')
         fragments = info_dict['fragments'][:1] if self.params.get(
             'test', False) else info_dict['fragments']
-        title = info_dict['title']
-        origin = info_dict['webpage_url']
+        title = info_dict.get('title', info_dict['format_id'])
+        origin = info_dict.get('webpage_url', info_dict['url'])
 
         ctx = {
             'filename': filename,
@@ -135,49 +118,39 @@ body > figure > img {
             stub = self._gen_stub(
                 fragments=fragments,
                 frag_boundary=frag_boundary,
-                title=title
+                title=title,
             )
 
             ctx['dest_stream'].write((
                 'MIME-Version: 1.0\r\n'
                 'From: <nowhere@yt-dlp.github.io.invalid>\r\n'
                 'To: <nowhere@yt-dlp.github.io.invalid>\r\n'
-                'Subject: {title}\r\n'
+                f'Subject: {self._escape_mime(title)}\r\n'
                 'Content-type: multipart/related; '
-                ''  'boundary="{boundary}"; '
-                ''  'type="text/html"\r\n'
-                'X.yt-dlp.Origin: {origin}\r\n'
+                f'boundary="{frag_boundary}"; '
+                'type="text/html"\r\n'
+                f'X.yt-dlp.Origin: {origin}\r\n'
                 '\r\n'
-                '--{boundary}\r\n'
+                f'--{frag_boundary}\r\n'
                 'Content-Type: text/html; charset=utf-8\r\n'
-                'Content-Length: {length}\r\n'
+                f'Content-Length: {len(stub)}\r\n'
                 '\r\n'
-                '{stub}\r\n'
-            ).format(
-                origin=origin,
-                boundary=frag_boundary,
-                length=len(stub),
-                title=self._escape_mime(title),
-                stub=stub
-            ).encode('utf-8'))
+                f'{stub}\r\n').encode())
             extra_state['header_written'] = True
 
         for i, fragment in enumerate(fragments):
             if (i + 1) <= ctx['fragment_index']:
                 continue
 
-            fragment_url = urljoin(fragment_base_url, fragment['path'])
-            success, frag_content = self._download_fragment(ctx, fragment_url, info_dict)
+            fragment_url = fragment.get('url')
+            if not fragment_url:
+                assert fragment_base_url
+                fragment_url = urljoin(fragment_base_url, fragment['path'])
+
+            success = self._download_fragment(ctx, fragment_url, info_dict)
             if not success:
                 continue
-
-            mime_type = b'image/jpeg'
-            if frag_content.startswith(b'\x89PNG\r\n\x1a\n'):
-                mime_type = b'image/png'
-            if frag_content.startswith((b'GIF87a', b'GIF89a')):
-                mime_type = b'image/gif'
-            if frag_content.startswith(b'RIFF') and frag_content[8:12] == 'WEBP':
-                mime_type = b'image/webp'
+            frag_content = self._read_fragment(ctx)
 
             frag_header = io.BytesIO()
             frag_header.write(
@@ -185,7 +158,7 @@ body > figure > img {
             frag_header.write(
                 b'Content-ID: <%b>\r\n' % self._gen_cid(i, fragment, frag_boundary).encode('us-ascii'))
             frag_header.write(
-                b'Content-type: %b\r\n' % mime_type)
+                b'Content-type: %b\r\n' % f'image/{imghdr.what(h=frag_content) or "jpeg"}'.encode())
             frag_header.write(
                 b'Content-length: %u\r\n' % len(frag_content))
             frag_header.write(
@@ -198,5 +171,4 @@ body > figure > img {
 
         ctx['dest_stream'].write(
             b'--%b--\r\n\r\n' % frag_boundary.encode('us-ascii'))
-        self._finish_frag_download(ctx, info_dict)
-        return True
+        return self._finish_frag_download(ctx, info_dict)

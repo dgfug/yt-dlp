@@ -1,8 +1,4 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 from .common import InfoExtractor
-from ..compat import compat_str
 from ..utils import (
     float_or_none,
     try_get,
@@ -18,7 +14,7 @@ class AliExpressLiveIE(InfoExtractor):
             'id': '2800002704436634',
             'ext': 'mp4',
             'title': 'CASIMA7.22',
-            'thumbnail': r're:http://.*\.jpg',
+            'thumbnail': r're:https?://.*\.jpg',
             'uploader': 'CASIMA Official Store',
             'timestamp': 1500717600,
             'upload_date': '20170722',
@@ -47,7 +43,7 @@ class AliExpressLiveIE(InfoExtractor):
             'title': title,
             'thumbnail': data.get('coverUrl'),
             'uploader': try_get(
-                data, lambda x: x['followBar']['name'], compat_str),
+                data, lambda x: x['followBar']['name'], str),
             'timestamp': float_or_none(data.get('startTimeLong'), scale=1000),
             'formats': formats,
         }

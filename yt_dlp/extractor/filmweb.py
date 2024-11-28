@@ -1,6 +1,3 @@
-from __future__ import unicode_literals
-
-
 from .common import InfoExtractor
 
 
@@ -17,7 +14,7 @@ class FilmwebIE(InfoExtractor):
             'timestamp': 1458140101,
             'uploader_id': '12639966',
             'uploader': 'Live Roaldset',
-        }
+        },
     }
 
     def _real_extract(self, url):

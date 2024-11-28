@@ -1,22 +1,15 @@
-# coding: utf-8
-from __future__ import unicode_literals
+import base64
 
 from .common import InfoExtractor
-from ..aes import aes_cbc_decrypt
-from ..compat import (
-    compat_b64decode,
-    compat_ord,
-)
+from ..aes import aes_cbc_decrypt_bytes, unpad_pkcs7
 from ..utils import (
-    bytes_to_intlist,
     ExtractorError,
-    intlist_to_bytes,
     unified_strdate,
 )
 
 
 class ShemarooMeIE(InfoExtractor):
-    _VALID_URL = r'(?:https?://)(?:www\.)?shemaroome\.com/(?:movies|shows)/(?P<id>[^?#]+)'
+    _VALID_URL = r'https?://(?:www\.)?shemaroome\.com/(?:movies|shows)/(?P<id>[^?#]+)'
     _TESTS = [{
         'url': 'https://www.shemaroome.com/movies/dil-hai-tumhaara',
         'info_dict': {
@@ -28,8 +21,8 @@ class ShemarooMeIE(InfoExtractor):
             'description': 'md5:2782c4127807103cf5a6ae2ca33645ce',
         },
         'params': {
-            'skip_download': True
-        }
+            'skip_download': True,
+        },
     }, {
         'url': 'https://www.shemaroome.com/shows/jurm-aur-jazbaat/laalach',
         'info_dict': {
@@ -41,9 +34,9 @@ class ShemarooMeIE(InfoExtractor):
             'release_date': '20210507',
         },
         'params': {
-            'skip_download': True
+            'skip_download': True,
         },
-        'skip': 'Premium videos cannot be downloaded yet.'
+        'skip': 'Premium videos cannot be downloaded yet.',
     }, {
         'url': 'https://www.shemaroome.com/shows/jai-jai-jai-bajrang-bali/jai-jai-jai-bajrang-bali-episode-99',
         'info_dict': {
@@ -55,8 +48,8 @@ class ShemarooMeIE(InfoExtractor):
             'release_date': '20110101',
         },
         'params': {
-            'skip_download': True
-        }
+            'skip_download': True,
+        },
     }]
 
     def _real_extract(self, url):
@@ -73,13 +66,14 @@ class ShemarooMeIE(InfoExtractor):
         data_json = self._download_json('https://www.shemaroome.com/users/user_all_lists', video_id, data=data.encode())
         if not data_json.get('status'):
             raise ExtractorError('Premium videos cannot be downloaded yet.', expected=True)
-        url_data = bytes_to_intlist(compat_b64decode(data_json['new_play_url']))
-        key = bytes_to_intlist(compat_b64decode(data_json['key']))
-        iv = [0] * 16
-        m3u8_url = intlist_to_bytes(aes_cbc_decrypt(url_data, key, iv))
-        m3u8_url = m3u8_url[:-compat_ord((m3u8_url[-1]))].decode('ascii')
-        formats = self._extract_m3u8_formats(m3u8_url, video_id, fatal=False, headers={'stream_key': data_json['stream_key']})
-        self._sort_formats(formats)
+        url_data = base64.b64decode(data_json['new_play_url'])
+        key = base64.b64decode(data_json['key'])
+        iv = bytes(16)
+        m3u8_url = unpad_pkcs7(aes_cbc_decrypt_bytes(url_data, key, iv)).decode('ascii')
+        headers = {'stream_key': data_json['stream_key']}
+        formats, m3u8_subs = self._extract_m3u8_formats_and_subtitles(m3u8_url, video_id, fatal=False, headers=headers)
+        for fmt in formats:
+            fmt['http_headers'] = headers
 
         release_date = self._html_search_regex(
             (r'itemprop="uploadDate">\s*([\d-]+)', r'id="release_date" value="([\d-]+)'),
@@ -91,6 +85,7 @@ class ShemarooMeIE(InfoExtractor):
             subtitles.setdefault('EN', []).append({
                 'url': self._proto_relative_url(sub_url),
             })
+        subtitles = self._merge_subtitles(subtitles, m3u8_subs)
         description = self._html_search_regex(r'(?s)>Synopsis(</.+?)</', webpage, 'description', fatal=False)
 
         return {

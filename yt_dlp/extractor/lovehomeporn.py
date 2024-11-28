@@ -1,6 +1,3 @@
-from __future__ import unicode_literals
-
-
 from .nuevo import NuevoBaseIE
 
 
@@ -18,7 +15,7 @@ class LoveHomePornIE(NuevoBaseIE):
         },
         'params': {
             'skip_download': True,
-        }
+        },
     }
 
     def _real_extract(self, url):
@@ -27,10 +24,10 @@ class LoveHomePornIE(NuevoBaseIE):
         display_id = mobj.group('display_id')
 
         info = self._extract_nuevo(
-            'http://lovehomeporn.com/media/nuevo/config.php?key=%s' % video_id,
+            f'http://lovehomeporn.com/media/nuevo/config.php?key={video_id}',
             video_id)
         info.update({
             'display_id': display_id,
-            'age_limit': 18
+            'age_limit': 18,
         })
         return info

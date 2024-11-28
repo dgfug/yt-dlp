@@ -1,5 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
 import hashlib
 import hmac
 import json
@@ -19,7 +17,7 @@ class VikiBaseIE(InfoExtractor):
     _VALID_URL_BASE = r'https?://(?:www\.)?viki\.(?:com|net|mx|jp|fr)/'
     _API_URL_TEMPLATE = 'https://api.viki.io%s'
 
-    _DEVICE_ID = '86085977d'  # used for android api
+    _DEVICE_ID = '112395910d'
     _APP = '100005a'
     _APP_VERSION = '6.11.3'
     _APP_SECRET = 'd96704b180208dbb2efa30fe44c48bd8690441af9f567ba8fd710a72badc85198f7472'
@@ -45,14 +43,14 @@ class VikiBaseIE(InfoExtractor):
             'X-Viki-as-id': '100005a-1625321982-3932',
             'timestamp': str(timestamp),
             'signature': str(sig),
-            'x-viki-app-ver': self._APP_VERSION
+            'x-viki-app-ver': self._APP_VERSION,
         }
 
     def _api_query(self, path, version=4, **kwargs):
         path += '?' if '?' not in path else '&'
         query = f'/v{version}/{path}app={self._APP}'
         if self._token:
-            query += '&token=%s' % self._token
+            query += f'&token={self._token}'
         return query + ''.join(f'&{name}={val}' for name, val in kwargs.items())
 
     def _sign_query(self, path):
@@ -70,7 +68,7 @@ class VikiBaseIE(InfoExtractor):
             url = self._API_URL_TEMPLATE % self._api_query(path, version=4)
         resp = self._download_json(
             url, video_id, note, fatal=fatal, query=query,
-            data=json.dumps(data).encode('utf-8') if data else None,
+            data=json.dumps(data).encode() if data else None,
             headers=({'x-viki-app-ver': self._APP_VERSION} if data
                      else self._stream_headers(timestamp, sig) if query is None
                      else None), expected_status=400) or {}
@@ -81,7 +79,7 @@ class VikiBaseIE(InfoExtractor):
     def _raise_error(self, error, fatal=True):
         if error is None:
             return
-        msg = '%s said: %s' % (self.IE_NAME, error)
+        msg = f'{self.IE_NAME} said: {error}'
         if fatal:
             raise ExtractorError(msg, expected=True)
         else:
@@ -99,14 +97,7 @@ class VikiBaseIE(InfoExtractor):
                     self.raise_login_required(message)
                 self._raise_error(message)
 
-    def _real_initialize(self):
-        self._login()
-
-    def _login(self):
-        username, password = self._get_login_info()
-        if username is None:
-            return
-
+    def _perform_login(self, username, password):
         self._token = self._call_api(
             'sessions.json', None, 'Logging in', fatal=False,
             data={'username': username, 'password': password}).get('token')
@@ -122,7 +113,7 @@ class VikiBaseIE(InfoExtractor):
 
 class VikiIE(VikiBaseIE):
     IE_NAME = 'viki'
-    _VALID_URL = r'%s(?:videos|player)/(?P<id>[0-9]+v)' % VikiBaseIE._VALID_URL_BASE
+    _VALID_URL = rf'{VikiBaseIE._VALID_URL_BASE}(?:videos|player)/(?P<id>[0-9]+v)'
     _TESTS = [{
         'note': 'Free non-DRM video with storyboards in MPD',
         'url': 'https://www.viki.com/videos/1175236v-choosing-spouse-by-lottery-episode-1',
@@ -134,9 +125,6 @@ class VikiIE(VikiBaseIE):
             'age_limit': 13,
             'uploader': 'FCC',
             'upload_date': '20201127',
-        },
-        'params': {
-            'format': 'bestvideo',
         },
     }, {
         'url': 'http://www.viki.com/videos/1023585v-heirs-episode-14',
@@ -150,9 +138,6 @@ class VikiIE(VikiBaseIE):
             'age_limit': 13,
             'duration': 3570,
             'episode_number': 14,
-        },
-        'params': {
-            'format': 'bestvideo',
         },
         'skip': 'Blocked in the US',
     }, {
@@ -203,9 +188,6 @@ class VikiIE(VikiBaseIE):
             'age_limit': 13,
             'episode_number': 1,
         },
-        'params': {
-            'format': 'bestvideo',
-        },
     }, {
         # youtube external
         'url': 'http://www.viki.com/videos/50562v-poor-nastya-complete-episode-1',
@@ -241,9 +223,6 @@ class VikiIE(VikiBaseIE):
             'title': 'Love In Magic',
             'age_limit': 13,
         },
-        'params': {
-            'format': 'bestvideo',
-        },
     }]
 
     def _real_extract(self, url):
@@ -254,10 +233,10 @@ class VikiIE(VikiBaseIE):
         title = try_get(video, lambda x: x['titles']['en'], str)
         episode_number = int_or_none(video.get('number'))
         if not title:
-            title = 'Episode %d' % episode_number if video.get('type') == 'episode' else video.get('id') or video_id
+            title = f'Episode {episode_number}' if video.get('type') == 'episode' else video.get('id') or video_id
             container_titles = try_get(video, lambda x: x['container']['titles'], dict) or {}
             container_title = self.dict_selection(container_titles, 'en')
-            title = '%s - %s' % (container_title, title)
+            title = f'{container_title} - {title}'
 
         thumbnails = [{
             'id': thumbnail_id,
@@ -265,23 +244,25 @@ class VikiIE(VikiBaseIE):
         } for thumbnail_id, thumbnail in (video.get('images') or {}).items() if thumbnail.get('url')]
 
         resp = self._call_api(
-            'playback_streams/%s.json?drms=dt1,dt2&device_id=%s' % (video_id, self._DEVICE_ID),
+            f'playback_streams/{video_id}.json?drms=dt3&device_id={self._DEVICE_ID}',
             video_id, 'Downloading video streams JSON')['main'][0]
 
         stream_id = try_get(resp, lambda x: x['properties']['track']['stream_id'])
         subtitles = dict((lang, [{
             'ext': ext,
             'url': self._API_URL_TEMPLATE % self._api_query(
-                f'videos/{video_id}/auth_subtitles/{lang}.{ext}', stream_id=stream_id)
-        } for ext in ('srt', 'vtt')]) for lang in (video.get('subtitle_completions') or {}).keys())
+                f'videos/{video_id}/auth_subtitles/{lang}.{ext}', stream_id=stream_id),
+        } for ext in ('srt', 'vtt')]) for lang in (video.get('subtitle_completions') or {}))
 
         mpd_url = resp['url']
-        # 1080p is hidden in another mpd which can be found in the current manifest content
+        # 720p is hidden in another MPD which can be found in the current manifest content
         mpd_content = self._download_webpage(mpd_url, video_id, note='Downloading initial MPD manifest')
         mpd_url = self._search_regex(
             r'(?mi)<BaseURL>(http.+.mpd)', mpd_content, 'new manifest', default=mpd_url)
+        if 'mpdhd_high' not in mpd_url and 'sig=' not in mpd_url:
+            # Modify the URL to get 1080p
+            mpd_url = mpd_url.replace('mpdhd', 'mpdhd_high')
         formats = self._extract_mpd_formats(mpd_url, video_id)
-        self._sort_formats(formats)
 
         return {
             'id': video_id,
@@ -302,7 +283,7 @@ class VikiIE(VikiBaseIE):
 
 class VikiChannelIE(VikiBaseIE):
     IE_NAME = 'viki:channel'
-    _VALID_URL = r'%s(?:tv|news|movies|artists)/(?P<id>[0-9]+c)' % VikiBaseIE._VALID_URL_BASE
+    _VALID_URL = rf'{VikiBaseIE._VALID_URL_BASE}(?:tv|news|movies|artists)/(?P<id>[0-9]+c)'
     _TESTS = [{
         'url': 'http://www.viki.com/tv/50c-boys-over-flowers',
         'info_dict': {
@@ -336,7 +317,7 @@ class VikiChannelIE(VikiBaseIE):
     def _entries(self, channel_id):
         params = {
             'app': self._APP, 'token': self._token, 'only_ids': 'true',
-            'direction': 'asc', 'sort': 'number', 'per_page': 30
+            'direction': 'asc', 'sort': 'number', 'per_page': 30,
         }
         video_types = self._configuration_arg('video_types') or self._video_types
         for video_type in video_types:
@@ -348,7 +329,7 @@ class VikiChannelIE(VikiBaseIE):
                 params['page'] = page_num
                 res = self._call_api(
                     f'containers/{channel_id}/{video_type}.json', channel_id, query=params, fatal=False,
-                    note='Downloading %s JSON page %d' % (video_type.title(), page_num))
+                    note=f'Downloading {video_type.title()} JSON page {page_num}')
 
                 for video_id in res.get('response') or []:
                     yield self.url_result(f'https://www.viki.com/videos/{video_id}', VikiIE.ie_key(), video_id)
@@ -357,7 +338,7 @@ class VikiChannelIE(VikiBaseIE):
 
     def _real_extract(self, url):
         channel_id = self._match_id(url)
-        channel = self._call_api('containers/%s.json' % channel_id, channel_id, 'Downloading channel JSON')
+        channel = self._call_api(f'containers/{channel_id}.json', channel_id, 'Downloading channel JSON')
         self._check_errors(channel)
         return self.playlist_result(
             self._entries(channel_id), channel_id,

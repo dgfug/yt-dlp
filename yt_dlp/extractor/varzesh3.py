@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 from .common import InfoExtractor
 from ..utils import (
     clean_html,
@@ -10,6 +7,7 @@ from ..utils import (
 
 
 class Varzesh3IE(InfoExtractor):
+    _WORKING = False
     _VALID_URL = r'https?://(?:www\.)?video\.varzesh3\.com/(?:[^/]+/)+(?P<id>[^/]+)/?'
     _TESTS = [{
         'url': 'http://video.varzesh3.com/germany/bundesliga/5-%D9%88%D8%A7%DA%A9%D9%86%D8%B4-%D8%A8%D8%B1%D8%AA%D8%B1-%D8%AF%D8%B1%D9%88%D8%A7%D8%B2%D9%87%E2%80%8C%D8%A8%D8%A7%D9%86%D8%A7%D9%86%D8%9B%D9%87%D9%81%D8%AA%D9%87-26-%D8%A8%D9%88%D9%86%D8%AF%D8%B3/',
@@ -42,8 +40,7 @@ class Varzesh3IE(InfoExtractor):
         video_url = self._search_regex(
             r'<source[^>]+src="([^"]+)"', webpage, 'video url')
 
-        title = remove_start(self._html_search_regex(
-            r'<title>([^<]+)</title>', webpage, 'title'), 'ویدیو ورزش 3 | ')
+        title = remove_start(self._html_extract_title(webpage), 'ویدیو ورزش 3 | ')
 
         description = self._html_search_regex(
             r'(?s)<div class="matn">(.+?)</div>',

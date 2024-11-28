@@ -1,13 +1,7 @@
-# coding: utf-8
-from __future__ import unicode_literals
+import urllib.parse
 
-
-from .common import InfoExtractor
 from .brightcove import BrightcoveLegacyIE
-from ..compat import (
-    compat_parse_qs,
-    compat_urlparse,
-)
+from .common import InfoExtractor
 from ..utils import smuggle_url
 
 
@@ -26,7 +20,6 @@ class RMCDecouverteIE(InfoExtractor):
             'upload_date': '20210428',
         },
         'params': {
-            'format': 'bestvideo',
             'skip_download': True,
         },
     }, {
@@ -64,7 +57,7 @@ class RMCDecouverteIE(InfoExtractor):
         webpage = self._download_webpage(url, display_id)
         brightcove_legacy_url = BrightcoveLegacyIE._extract_brightcove_url(webpage)
         if brightcove_legacy_url:
-            brightcove_id = compat_parse_qs(compat_urlparse.urlparse(
+            brightcove_id = urllib.parse.parse_qs(urllib.parse.urlparse(
                 brightcove_legacy_url).query)['@videoPlayer'][0]
         else:
             brightcove_id = self._search_regex(

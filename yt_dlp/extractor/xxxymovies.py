@@ -1,10 +1,7 @@
-from __future__ import unicode_literals
-
-
 from .common import InfoExtractor
 from ..utils import (
-    parse_duration,
     int_or_none,
+    parse_duration,
 )
 
 
@@ -24,7 +21,7 @@ class XXXYMoviesIE(InfoExtractor):
             'like_count': int,
             'dislike_count': int,
             'age_limit': 18,
-        }
+        },
     }
 
     def _real_extract(self, url):

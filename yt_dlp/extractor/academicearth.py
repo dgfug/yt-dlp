@@ -1,12 +1,10 @@
-from __future__ import unicode_literals
-
 import re
 
 from .common import InfoExtractor
 
 
 class AcademicEarthCourseIE(InfoExtractor):
-    _VALID_URL = r'^https?://(?:www\.)?academicearth\.org/playlists/(?P<id>[^?#/]+)'
+    _VALID_URL = r'https?://(?:www\.)?academicearth\.org/playlists/(?P<id>[^?#/]+)'
     IE_NAME = 'AcademicEarth:Course'
     _TEST = {
         'url': 'http://academicearth.org/playlists/laws-of-nature/',

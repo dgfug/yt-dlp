@@ -1,22 +1,16 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import re
+import xml.etree.ElementTree
 
 from .common import InfoExtractor
-from ..compat import (
-    compat_str,
-    compat_xpath,
-)
+from ..networking import HEADRequest, Request
 from ..utils import (
     ExtractorError,
+    RegexNotFoundError,
     find_xpath_attr,
     fix_xml_ampersands,
     float_or_none,
-    HEADRequest,
     int_or_none,
-    RegexNotFoundError,
-    sanitized_Request,
+    join_nonempty,
     strip_or_none,
     timeconvert,
     try_get,
@@ -28,7 +22,7 @@ from ..utils import (
 
 
 def _media_xml_tag(tag):
-    return '{http://search.yahoo.com/mrss/}%s' % tag
+    return f'{{http://search.yahoo.com/mrss/}}{tag}'
 
 
 class MTVServicesInfoExtractor(InfoExtractor):
@@ -48,7 +42,7 @@ class MTVServicesInfoExtractor(InfoExtractor):
         return self._FEED_URL
 
     def _get_thumbnail_url(self, uri, itemdoc):
-        search_path = '%s/%s' % (_media_xml_tag('group'), _media_xml_tag('thumbnail'))
+        search_path = '{}/{}'.format(_media_xml_tag('group'), _media_xml_tag('thumbnail'))
         thumb_node = itemdoc.find(search_path)
         if thumb_node is None:
             return None
@@ -56,17 +50,17 @@ class MTVServicesInfoExtractor(InfoExtractor):
 
     def _extract_mobile_video_formats(self, mtvn_id):
         webpage_url = self._MOBILE_TEMPLATE % mtvn_id
-        req = sanitized_Request(webpage_url)
+        req = Request(webpage_url)
         # Otherwise we get a webpage that would execute some javascript
-        req.add_header('User-Agent', 'curl/7')
+        req.headers['User-Agent'] = 'curl/7'
         webpage = self._download_webpage(req, mtvn_id,
                                          'Downloading mobile page')
         metrics_url = unescapeHTML(self._search_regex(r'<a href="(http://metrics.+?)"', webpage, 'url'))
         req = HEADRequest(metrics_url)
         response = self._request_webpage(req, mtvn_id, 'Resolving url')
-        url = response.geturl()
+        url = response.url
         # Transform the url to get the best quality:
-        url = re.sub(r'.+pxE=mp4', 'http://mtvnmobile.vo.llnwd.net/kip0/_pxn=0+_pxK=18639+_pxE=mp4', url, 1)
+        url = re.sub(r'.+pxE=mp4', 'http://mtvnmobile.vo.llnwd.net/kip0/_pxn=0+_pxK=18639+_pxE=mp4', url, count=1)
         return [{'url': url, 'ext': 'mp4'}]
 
     def _extract_video_formats(self, mdoc, mtvn_id, video_id):
@@ -92,23 +86,21 @@ class MTVServicesInfoExtractor(InfoExtractor):
                     rtmp_video_url = rendition.find('./src').text
                     if 'error_not_available.swf' in rtmp_video_url:
                         raise ExtractorError(
-                            '%s said: video is not available' % self.IE_NAME,
+                            f'{self.IE_NAME} said: video is not available',
                             expected=True)
                     if rtmp_video_url.endswith('siteunavail.png'):
                         continue
                     formats.extend([{
                         'ext': 'flv' if rtmp_video_url.startswith('rtmp') else ext,
                         'url': rtmp_video_url,
-                        'format_id': '-'.join(filter(None, [
+                        'format_id': join_nonempty(
                             'rtmp' if rtmp_video_url.startswith('rtmp') else None,
-                            rendition.get('bitrate')])),
+                            rendition.get('bitrate')),
                         'width': int(rendition.get('width')),
                         'height': int(rendition.get('height')),
                     }])
                 except (KeyError, TypeError):
                     raise ExtractorError('Invalid rendition field.')
-        if formats:
-            self._sort_formats(formats)
         return formats
 
     def _extract_subtitles(self, mdoc, mtvn_id):
@@ -125,8 +117,8 @@ class MTVServicesInfoExtractor(InfoExtractor):
                 if ext == 'cea-608':
                     ext = 'scc'
                 subtitles.setdefault(lang, []).append({
-                    'url': compat_str(sub_src),
-                    'ext': ext
+                    'url': str(sub_src),
+                    'ext': ext,
                 })
         return subtitles
 
@@ -134,7 +126,7 @@ class MTVServicesInfoExtractor(InfoExtractor):
         uri = itemdoc.find('guid').text
         video_id = self._id_from_uri(uri)
         self.report_extraction(video_id)
-        content_el = itemdoc.find('%s/%s' % (_media_xml_tag('group'), _media_xml_tag('content')))
+        content_el = itemdoc.find('{}/{}'.format(_media_xml_tag('group'), _media_xml_tag('content')))
         mediagen_url = self._remove_template_parameter(content_el.attrib['url'])
         mediagen_url = mediagen_url.replace('device={device}', '')
         if 'acceptMethods' not in mediagen_url:
@@ -145,14 +137,14 @@ class MTVServicesInfoExtractor(InfoExtractor):
         mediagen_doc = self._download_xml(
             mediagen_url, video_id, 'Downloading video urls', fatal=False)
 
-        if mediagen_doc is False:
+        if not isinstance(mediagen_doc, xml.etree.ElementTree.Element):
             return None
 
         item = mediagen_doc.find('./video/item')
         if item is not None and item.get('type') == 'text':
-            message = '%s returned error: ' % self.IE_NAME
+            message = f'{self.IE_NAME} returned error: '
             if item.get('code') is not None:
-                message += '%s - ' % item.get('code')
+                message += '{} - '.format(item.get('code'))
             message += item.text
             raise ExtractorError(message, expected=True)
 
@@ -166,9 +158,9 @@ class MTVServicesInfoExtractor(InfoExtractor):
                 itemdoc, './/{http://search.yahoo.com/mrss/}category',
                 'scheme', 'urn:mtvn:video_title')
         if title_el is None:
-            title_el = itemdoc.find(compat_xpath('.//{http://search.yahoo.com/mrss/}title'))
+            title_el = itemdoc.find('.//{http://search.yahoo.com/mrss/}title')
         if title_el is None:
-            title_el = itemdoc.find(compat_xpath('.//title'))
+            title_el = itemdoc.find('.//title')
             if title_el.text is None:
                 title_el = None
 
@@ -191,7 +183,7 @@ class MTVServicesInfoExtractor(InfoExtractor):
         episode = episode.text if episode is not None else None
         if season and episode:
             # episode number includes season, so remove it
-            episode = re.sub(r'^%s' % season, '', episode)
+            episode = re.sub(rf'^{season}', '', episode)
 
         # This a short id that's used in the webpage urls
         mtvn_id = None
@@ -206,8 +198,6 @@ class MTVServicesInfoExtractor(InfoExtractor):
         # http://www.southpark.de/alle-episoden/s14e01-sexual-healing)
         if not formats:
             return None
-
-        self._sort_formats(formats)
 
         return {
             'title': title,
@@ -264,7 +254,7 @@ class MTVServicesInfoExtractor(InfoExtractor):
 
         feed_url = try_get(
             triforce_feed, lambda x: x['manifest']['zones'][data_zone]['feed'],
-            compat_str)
+            str)
         if not feed_url:
             return
 
@@ -272,7 +262,7 @@ class MTVServicesInfoExtractor(InfoExtractor):
         if not feed:
             return
 
-        return try_get(feed, lambda x: x['result']['data']['id'], compat_str)
+        return try_get(feed, lambda x: x['result']['data']['id'], str)
 
     @staticmethod
     def _extract_child_with_type(parent, t):
@@ -311,11 +301,17 @@ class MTVServicesInfoExtractor(InfoExtractor):
             main_container = self._extract_child_with_type(data, 'MainContainer')
             ab_testing = self._extract_child_with_type(main_container, 'ABTesting')
             video_player = self._extract_child_with_type(ab_testing or main_container, 'VideoPlayer')
-            mgid = video_player['props']['media']['video']['config']['uri']
+            if video_player:
+                mgid = try_get(video_player, lambda x: x['props']['media']['video']['config']['uri'])
+            else:
+                flex_wrapper = self._extract_child_with_type(ab_testing or main_container, 'FlexWrapper')
+                auth_suite_wrapper = self._extract_child_with_type(flex_wrapper, 'AuthSuiteWrapper')
+                player = self._extract_child_with_type(auth_suite_wrapper or flex_wrapper, 'Player')
+                if player:
+                    mgid = try_get(player, lambda x: x['props']['videoDetail']['mgid'])
 
         if not mgid:
-            mgid = self._search_regex(
-                r'"media":{"video":{"config":{"uri":"(mgid:.*?)"', webpage, 'mgid', default=None)
+            raise ExtractorError('Could not extract mgid')
 
         return mgid
 
@@ -323,13 +319,13 @@ class MTVServicesInfoExtractor(InfoExtractor):
         title = url_basename(url)
         webpage = self._download_webpage(url, title)
         mgid = self._extract_mgid(webpage)
-        videos_info = self._get_videos_info(mgid, url=url)
-        return videos_info
+        return self._get_videos_info(mgid, url=url)
 
 
 class MTVServicesEmbeddedIE(MTVServicesInfoExtractor):
     IE_NAME = 'mtvservices:embedded'
     _VALID_URL = r'https?://media\.mtvnservices\.com/embed/(?P<mgid>.+?)(\?|/|$)'
+    _EMBED_REGEX = [r'<iframe[^>]+?src=(["\'])(?P<url>(?:https?:)?//media\.mtvnservices\.com/embed/.+?)\1']
 
     _TEST = {
         # From http://www.thewrap.com/peter-dinklage-sums-up-game-of-thrones-in-45-seconds-video/
@@ -345,17 +341,10 @@ class MTVServicesEmbeddedIE(MTVServicesInfoExtractor):
         },
     }
 
-    @staticmethod
-    def _extract_url(webpage):
-        mobj = re.search(
-            r'<iframe[^>]+?src=(["\'])(?P<url>(?:https?:)?//media\.mtvnservices\.com/embed/.+?)\1', webpage)
-        if mobj:
-            return mobj.group('url')
-
     def _get_feed_url(self, uri, url=None):
         video_id = self._id_from_uri(uri)
         config = self._download_json(
-            'http://media.mtvnservices.com/pmt/e1/access/index.html?uri=%s&configtype=edge' % uri, video_id)
+            f'http://media.mtvnservices.com/pmt/e1/access/index.html?uri={uri}&configtype=edge', video_id)
         return self._remove_template_parameter(config['feedWithQueryParams'])
 
     def _real_extract(self, url):
@@ -452,14 +441,15 @@ class MTVVideoIE(MTVServicesInfoExtractor):
                 r'(?s)isVevoVideo = true;.*?vevoVideoId = "(.*?)";', webpage)
             if m_vevo:
                 vevo_id = m_vevo.group(1)
-                self.to_screen('Vevo video detected: %s' % vevo_id)
-                return self.url_result('vevo:%s' % vevo_id, ie='Vevo')
+                self.to_screen(f'Vevo video detected: {vevo_id}')
+                return self.url_result(f'vevo:{vevo_id}', ie='Vevo')
 
             uri = self._html_search_regex(r'/uri/(.*?)\?', webpage, 'uri')
         return self._get_videos_info(uri)
 
 
 class MTVDEIE(MTVServicesInfoExtractor):
+    _WORKING = False
     IE_NAME = 'mtv.de'
     _VALID_URL = r'https?://(?:www\.)?mtv\.de/(?:musik/videoclips|folgen|news)/(?P<id>[0-9a-z]+)'
     _TESTS = [{
@@ -541,7 +531,7 @@ class MTVItaliaIE(MTVServicesInfoExtractor):
         }
 
 
-class MTVItaliaProgrammaIE(MTVItaliaIE):
+class MTVItaliaProgrammaIE(MTVItaliaIE):  # XXX: Do not subclass from concrete IE
     IE_NAME = 'mtv.it:programma'
     _VALID_URL = r'https?://(?:www\.)?mtv\.it/(?:programmi|playlist)/(?P<id>[0-9a-z]+)'
     _TESTS = [{
@@ -585,9 +575,9 @@ class MTVItaliaProgrammaIE(MTVItaliaIE):
     def _get_entries(self, title, url):
         while True:
             pg = self._search_regex(r'/(\d+)$', url, 'entries', '1')
-            entries = self._download_json(url, title, 'page %s' % pg)
+            entries = self._download_json(url, title, f'page {pg}')
             url = try_get(
-                entries, lambda x: x['result']['nextPageURL'], compat_str)
+                entries, lambda x: x['result']['nextPageURL'], str)
             entries = try_get(
                 entries, (
                     lambda x: x['result']['data']['items'],
@@ -606,15 +596,15 @@ class MTVItaliaProgrammaIE(MTVItaliaIE):
         info = self._download_json(info_url, video_id).get('manifest')
 
         redirect = try_get(
-            info, lambda x: x['newLocation']['url'], compat_str)
+            info, lambda x: x['newLocation']['url'], str)
         if redirect:
             return self.url_result(redirect)
 
         title = info.get('title')
         video_id = try_get(
-            info, lambda x: x['reporting']['itemId'], compat_str)
+            info, lambda x: x['reporting']['itemId'], str)
         parent_id = try_get(
-            info, lambda x: x['reporting']['parentId'], compat_str)
+            info, lambda x: x['reporting']['parentId'], str)
 
         playlist_url = current_url = None
         for z in (info.get('zones') or {}).values():
@@ -638,15 +628,15 @@ class MTVItaliaProgrammaIE(MTVItaliaIE):
             info, (
                 lambda x: x['title'],
                 lambda x: x['headline']),
-            compat_str)
-        description = try_get(info, lambda x: x['content'], compat_str)
+            str)
+        description = try_get(info, lambda x: x['content'], str)
 
         if current_url:
             season = try_get(
                 self._download_json(playlist_url, video_id, 'Seasons info'),
                 lambda x: x['result']['data'], dict)
             current = try_get(
-                season, lambda x: x['currentSeason'], compat_str)
+                season, lambda x: x['currentSeason'], str)
             seasons = try_get(
                 season, lambda x: x['seasons'], list) or []
 

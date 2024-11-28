@@ -1,11 +1,8 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
-
 from .hbo import HBOBaseIE
 
 
 class CinemaxIE(HBOBaseIE):
+    _WORKING = False
     _VALID_URL = r'https?://(?:www\.)?cinemax\.com/(?P<path>[^/]+/video/[0-9a-z-]+-(?P<id>\d+))'
     _TESTS = [{
         'url': 'https://www.cinemax.com/warrior/video/s1-ep-1-recap-20126903',
@@ -23,6 +20,6 @@ class CinemaxIE(HBOBaseIE):
 
     def _real_extract(self, url):
         path, video_id = self._match_valid_url(url).groups()
-        info = self._extract_info('https://www.cinemax.com/%s.xml' % path, video_id)
+        info = self._extract_info(f'https://www.cinemax.com/{path}.xml', video_id)
         info['id'] = video_id
         return info
